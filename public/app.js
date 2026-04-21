@@ -590,16 +590,33 @@ async function loadAuditLogs() {
 window.downloadPDF = function(scanId, domain) {
     if (!scanId) return showToast('No scan selected.', 'error');
     showToast('Generating PDF report...');
-    const a = document.createElement('a');
-    a.href = '/api/scans/' + scanId + '/pdf';
-    a.download = `heaptruffle-${domain || 'scan'}.pdf`;
-    // Add auth header via fetch and blob
     fetch('/api/scans/' + scanId + '/pdf', { headers: { 'Authorization': 'Bearer ' + TOKEN } })
-        .then(r => r.blob()).then(blob => {
+        .then(async r => {
+            if (!r.ok) {
+                // Parse error body to show a useful message
+                const errText = await r.text().catch(() => '');
+                let errMsg = `PDF generation failed (${r.status})`;
+                try { const j = JSON.parse(errText); errMsg = j.error || errMsg; } catch (_) {}
+                throw new Error(errMsg);
+            }
+            const contentType = r.headers.get('Content-Type') || '';
+            if (!contentType.includes('application/pdf')) {
+                throw new Error('Server did not return a PDF file.');
+            }
+            return r.blob();
+        })
+        .then(blob => {
             const url = URL.createObjectURL(blob);
-            a.href = url; a.click(); URL.revokeObjectURL(url);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `heaptruffle-${domain || 'scan'}.pdf`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
             showToast('PDF downloaded!');
-        }).catch(() => showToast('PDF generation failed.', 'error'));
+        })
+        .catch(err => showToast(err.message || 'PDF generation failed.', 'error'));
 };
 
 // ══════════════════════════════════════════════════════════════
